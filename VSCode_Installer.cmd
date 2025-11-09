@@ -53,6 +53,21 @@ if not exist "%CURL%" (
 )
 
 REM ================================================
+REM Create Staging Directories
+REM ================================================
+echo [INFO] Creating staging directories...
+mkdir "%VSCodeDir%\data\.staging" >nul 2>nul
+mkdir "%VSCodeDir%\data\.staging\fonts" >nul 2>nul
+mkdir "%VSCodeDir%\data\.staging\theme" >nul 2>nul
+mkdir "%VSCodeDir%\data\.staging\profile" >nul 2>nul
+mkdir "%VSCodeDir%\data\.staging\python" >nul 2>nul
+
+set "StagingFonts=%VSCodeDir%\data\.staging\fonts"
+set "StagingTheme=%VSCodeDir%\data\.staging\theme"
+set "StagingProfile=%VSCodeDir%\data\.staging\profile"
+set "StagingPython=%VSCodeDir%\data\.staging\python"
+
+REM ================================================
 REM Check for winget
 REM ================================================
 where winget >nul 2>nul
@@ -85,77 +100,69 @@ for /f "tokens=1,2 delims=," %%A in ('"%POWERSHELL%" -NoProfile -Command ^
     set "hasDalseo=%%B"
 )
 
+REM Download fonts to staging if not already there
+if not exist "%StagingFonts%\0xProto.zip" (
+    echo [INFO] Downloading 0xProto Nerd Font to staging...
+    if defined USE_POWERSHELL_CURL (
+        "%POWERSHELL%" -NoProfile -Command "Invoke-WebRequest -Uri 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/0xProto.zip' -OutFile '%StagingFonts%\0xProto.zip' -UseBasicParsing" || exit /b 1
+    ) else (
+        "%CURL%" -L -o "%StagingFonts%\0xProto.zip" "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/0xProto.zip" || exit /b 1
+    )
+) else (
+    echo [INFO] 0xProto font already in staging.
+)
+
+if not exist "%StagingFonts%\font_ttf2.zip" (
+    echo [INFO] Downloading DalseoHealing font to staging...
+    if defined USE_POWERSHELL_CURL (
+        "%POWERSHELL%" -NoProfile -Command "Invoke-WebRequest -Uri 'https://dalseo.daegu.kr/cmsh/dalseo.daegu.kr/images/content/font_ttf2.zip' -OutFile '%StagingFonts%\font_ttf2.zip' -UseBasicParsing" || exit /b 1
+    ) else (
+        "%CURL%" -L -o "%StagingFonts%\font_ttf2.zip" "https://dalseo.daegu.kr/cmsh/dalseo.daegu.kr/images/content/font_ttf2.zip" || exit /b 1
+    )
+) else (
+    echo [INFO] DalseoHealing font already in staging.
+)
+
+REM Install fonts if not already installed
 if /i "%hasNerd%"=="True" if /i "%hasDalseo%"=="True" (
     echo [INFO] Required fonts already installed.
     goto :SKIP_FONTS
 )
 
-echo [INFO] Installing missing fonts...
-set "FontsDir=%TempDir%\fonts"
-mkdir "%FontsDir%" 2>nul
-pushd "%FontsDir%"
-
-if /i "%hasNerd%"=="False" (
-    echo [INFO] Downloading 0xProto Nerd Font...
-    if defined USE_POWERSHELL_CURL (
-        "%POWERSHELL%" -NoProfile -Command "Invoke-WebRequest -Uri 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/0xProto.zip' -OutFile '0xProto.zip' -UseBasicParsing" || exit /b 1
-    ) else (
-        "%CURL%" -L -o "0xProto.zip" "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/0xProto.zip" || exit /b 1
-    )
-    
-    REM Save to staging for offline installation
-    if exist "%VSCodeDir%\data\.staging\fonts" (
-        echo [INFO] Saving to staging folder...
-        copy /Y "0xProto.zip" "%VSCodeDir%\data\.staging\fonts\0xProto.zip" >nul
-    )
-    
-    "%POWERSHELL%" -NoProfile -Command "Expand-Archive -Path '0xProto.zip' -DestinationPath '.' -Force"
-    del /f /q "0xProto.zip"
-    "%POWERSHELL%" -NoProfile -Command "Get-ChildItem . -File | Where-Object { $_.Name -notlike '*Regular.ttf' } | Remove-Item -Force"
-)
-
-if /i "%hasDalseo%"=="False" (
-    echo [INFO] Downloading DalseoHealing font...
-    if defined USE_POWERSHELL_CURL (
-        "%POWERSHELL%" -NoProfile -Command "Invoke-WebRequest -Uri 'https://dalseo.daegu.kr/cmsh/dalseo.daegu.kr/images/content/font_ttf2.zip' -OutFile 'font_ttf2.zip' -UseBasicParsing" || exit /b 1
-    ) else (
-        "%CURL%" -L -o "font_ttf2.zip" "https://dalseo.daegu.kr/cmsh/dalseo.daegu.kr/images/content/font_ttf2.zip" || exit /b 1
-    )
-    
-    REM Save to staging for offline installation
-    if exist "%VSCodeDir%\data\.staging\fonts" (
-        echo [INFO] Saving to staging folder...
-        copy /Y "font_ttf2.zip" "%VSCodeDir%\data\.staging\fonts\font_ttf2.zip" >nul
-    )
-    
-    "%POWERSHELL%" -NoProfile -Command "Expand-Archive -Path 'font_ttf2.zip' -DestinationPath '.' -Force"
-    del /f /q "font_ttf2.zip"
-    "%POWERSHELL%" -NoProfile -Command "Get-ChildItem . -File | Where-Object { $_.Name -notlike '*DalseoHealingMedium.ttf' } | Remove-Item -Force"
-)
-
+echo [INFO] Installing fonts from staging folder...
 "%POWERSHELL%" -NoProfile -Command ^
  "$ErrorActionPreference = 'Stop';" ^
+ "$stagingDir = '%StagingFonts%';" ^
+ "$tempDir = Join-Path $env:TEMP 'font-install';" ^
+ "New-Item -ItemType Directory -Path $tempDir -Force | Out-Null;" ^
  "try {" ^
+ "    if (Test-Path \"$stagingDir\0xProto.zip\") {" ^
+ "        Expand-Archive -Path \"$stagingDir\0xProto.zip\" -DestinationPath $tempDir -Force;" ^
+ "        Get-ChildItem $tempDir -File | Where-Object { $_.Name -notlike '*Regular.ttf' } | Remove-Item -Force;" ^
+ "    }" ^
+ "    if (Test-Path \"$stagingDir\font_ttf2.zip\") {" ^
+ "        Expand-Archive -Path \"$stagingDir\font_ttf2.zip\" -DestinationPath $tempDir -Force;" ^
+ "        Get-ChildItem $tempDir -File | Where-Object { $_.Name -notlike '*DalseoHealingMedium.ttf' } | Remove-Item -Force;" ^
+ "    }" ^
  "    $shell = New-Object -ComObject Shell.Application;" ^
  "    $fonts = $shell.Namespace(0x14);" ^
- "    Get-ChildItem . -Filter '*.ttf' | ForEach-Object {" ^
+ "    Get-ChildItem $tempDir -Filter '*.ttf' | ForEach-Object {" ^
  "        Write-Host \"Installing font: $($_.Name)\";" ^
  "        $fonts.CopyHere($_.FullName, 4 + 16);" ^
  "        Start-Sleep -Milliseconds 500" ^
- "    }" ^
+ "    };" ^
+ "    Remove-Item $tempDir -Recurse -Force" ^
  "} catch {" ^
  "    Write-Error \"Font installation failed: $_\";" ^
+ "    Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue;" ^
  "    exit 1" ^
  "}"
 
 if errorlevel 1 (
     echo [ERROR] Font installation failed.
-    popd
     exit /b 1
 )
 
-popd
-rmdir /s /q "%FontsDir%"
 echo [INFO] Fonts installation complete.
 
 :SKIP_FONTS
@@ -213,23 +220,26 @@ echo STEP 4: Installing Oh My Posh Theme
 echo ================================================
 echo.
 
-set "ThemesPath=%LocalAppData%\Programs\oh-my-posh\themes"
-if not exist "%ThemesPath%\tos-term.omp.json" (
-    echo [INFO] Downloading custom theme...
-    mkdir "%ThemesPath%" >nul 2>nul
+REM Download theme to staging if not already there
+if not exist "%StagingTheme%\tos-term.omp.json" (
+    echo [INFO] Downloading custom theme to staging...
     if defined USE_POWERSHELL_CURL (
-        "%POWERSHELL%" -NoProfile -Command "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/atticle/tos/main/win/oh-my-posh/tos-term.omp.json' -OutFile '%ThemesPath%\tos-term.omp.json' -UseBasicParsing"
+        "%POWERSHELL%" -NoProfile -Command "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/atticle/tos/main/win/oh-my-posh/tos-term.omp.json' -OutFile '%StagingTheme%\tos-term.omp.json' -UseBasicParsing"
     ) else (
-        "%CURL%" -L -o "%ThemesPath%\tos-term.omp.json" "https://raw.githubusercontent.com/atticle/tos/main/win/oh-my-posh/tos-term.omp.json"
-    )
-    
-    REM Save to staging for offline installation
-    if exist "%VSCodeDir%\data\.staging\theme" (
-        echo [INFO] Saving theme to staging folder...
-        copy /Y "%ThemesPath%\tos-term.omp.json" "%VSCodeDir%\data\.staging\theme\tos-term.omp.json" >nul
+        "%CURL%" -L -o "%StagingTheme%\tos-term.omp.json" "https://raw.githubusercontent.com/atticle/tos/main/win/oh-my-posh/tos-term.omp.json"
     )
 ) else (
-    echo [INFO] Custom theme already exists.
+    echo [INFO] Theme already in staging.
+)
+
+REM Install theme if not already installed
+set "ThemesPath=%LocalAppData%\Programs\oh-my-posh\themes"
+if not exist "%ThemesPath%\tos-term.omp.json" (
+    echo [INFO] Installing theme from staging...
+    mkdir "%ThemesPath%" >nul 2>nul
+    copy /Y "%StagingTheme%\tos-term.omp.json" "%ThemesPath%\tos-term.omp.json" >nul
+) else (
+    echo [INFO] Custom theme already installed.
 )
 
 REM ================================================
@@ -241,54 +251,46 @@ echo STEP 5: Installing PowerShell Modules and Profile
 echo ================================================
 echo.
 
-echo [INFO] Installing PowerShell modules and profile...
-set "PS1_FILE=%TempDir%\install-posh-modules.ps1"
-del "%PS1_FILE%" >nul 2>nul
-
->>"%PS1_FILE%" echo Write-Host "[INFO] Checking PowerShell modules..."
->>"%PS1_FILE%" echo $mods = 'Terminal-Icons','modern-unix-win','PSFzf'
->>"%PS1_FILE%" echo $missing = @()
->>"%PS1_FILE%" echo foreach ($m in $mods) {
->>"%PS1_FILE%" echo     if (-not (Get-Module -ListAvailable -Name $m)) {
->>"%PS1_FILE%" echo         Write-Host "[INFO] Module '$m' not found. Will install."
->>"%PS1_FILE%" echo         $missing += $m
->>"%PS1_FILE%" echo     } else {
->>"%PS1_FILE%" echo         Write-Host "[INFO] Module '$m' is already installed."
->>"%PS1_FILE%" echo     }
->>"%PS1_FILE%" echo }
->>"%PS1_FILE%" echo if ($missing.Count -gt 0) {
->>"%PS1_FILE%" echo     Write-Host "[INFO] Installing missing modules: $($missing -join ', ')"
->>"%PS1_FILE%" echo     Install-Module -Name $missing -Scope CurrentUser -Force -AllowClobber
->>"%PS1_FILE%" echo } else {
->>"%PS1_FILE%" echo     Write-Host "[INFO] All required modules are already installed."
->>"%PS1_FILE%" echo }
->>"%PS1_FILE%" echo.
->>"%PS1_FILE%" echo Write-Host "[INFO] Downloading PowerShell profile (overwriting if exists)..."
->>"%PS1_FILE%" echo if (-not (Test-Path (Split-Path $PROFILE -Parent))) {
->>"%PS1_FILE%" echo     New-Item -ItemType Directory -Path (Split-Path $PROFILE -Parent) -Force ^| Out-Null
->>"%PS1_FILE%" echo }
->>"%PS1_FILE%" echo Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/atticle/tos/main/win/pwsh7/Microsoft.PowerShell_profile.ps1' -OutFile $PROFILE -UseBasicParsing
->>"%PS1_FILE%" echo.
->>"%PS1_FILE%" echo # Save profile to staging
->>"%PS1_FILE%" echo $stagingProfile = '%VSCodeDir%\data\.staging\profile\Microsoft.PowerShell_profile.ps1'
->>"%PS1_FILE%" echo if (Test-Path (Split-Path $stagingProfile -Parent)) {
->>"%PS1_FILE%" echo     Write-Host "[INFO] Saving profile to staging folder..."
->>"%PS1_FILE%" echo     Copy-Item $PROFILE $stagingProfile -Force
->>"%PS1_FILE%" echo }
->>"%PS1_FILE%" echo Write-Host "[INFO] PowerShell profile has been configured."
-
-if exist "%PWSH_EXE%" (
-    "%PWSH_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%PS1_FILE%"
-) else (
-    echo [WARN] PowerShell 7 not found at expected location. Attempting to use installed pwsh...
-    where pwsh >nul 2>nul
-    if errorlevel 1 (
-        echo [ERROR] Cannot find PowerShell 7. Please restart your terminal or system.
-        exit /b 1
+REM Download profile to staging if not already there
+if not exist "%StagingProfile%\Microsoft.PowerShell_profile.ps1" (
+    echo [INFO] Downloading PowerShell profile to staging...
+    if defined USE_POWERSHELL_CURL (
+        "%POWERSHELL%" -NoProfile -Command "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/atticle/tos/main/win/pwsh7/Microsoft.PowerShell_profile.ps1' -OutFile '%StagingProfile%\Microsoft.PowerShell_profile.ps1' -UseBasicParsing"
+    ) else (
+        "%CURL%" -L -o "%StagingProfile%\Microsoft.PowerShell_profile.ps1" "https://raw.githubusercontent.com/atticle/tos/main/win/pwsh7/Microsoft.PowerShell_profile.ps1"
     )
-    pwsh -NoProfile -ExecutionPolicy Bypass -File "%PS1_FILE%"
+) else (
+    echo [INFO] Profile already in staging.
 )
-del "%PS1_FILE%"
+
+echo [INFO] Installing PowerShell modules and profile...
+set "PS_SETUP=%StagingProfile%\setup-modules.ps1"
+(
+    echo $mods = 'Terminal-Icons','modern-unix-win','PSFzf'
+    echo $missing = @^(^)
+    echo foreach ^($m in $mods^) {
+    echo     if ^(-not ^(Get-Module -ListAvailable -Name $m^)^) {
+    echo         Write-Host "[INFO] Module '$m' not found. Will install."
+    echo         $missing += $m
+    echo     } else {
+    echo         Write-Host "[INFO] Module '$m' is already installed."
+    echo     }
+    echo }
+    echo if ^($missing.Count -gt 0^) {
+    echo     Write-Host "[INFO] Installing missing modules: $^($missing -join ', '^)"
+    echo     Install-Module -Name $missing -Scope CurrentUser -Force -AllowClobber
+    echo } else {
+    echo     Write-Host "[INFO] All required modules are already installed."
+    echo }
+    echo if ^(-not ^(Test-Path ^(Split-Path $PROFILE -Parent^)^)^) {
+    echo     New-Item -ItemType Directory -Path ^(Split-Path $PROFILE -Parent^) -Force ^| Out-Null
+    echo }
+    echo Copy-Item '%StagingProfile%\Microsoft.PowerShell_profile.ps1' $PROFILE -Force
+    echo Write-Host '[INFO] PowerShell profile has been configured.'
+) > "%PS_SETUP%"
+
+"%PWSH_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%PS_SETUP%"
+del "%PS_SETUP%" >nul 2>nul
 
 REM ================================================
 REM STEP 6: Install VSCode Portable
@@ -298,12 +300,6 @@ echo ================================================
 echo STEP 6: Installing VSCode Portable
 echo ================================================
 echo.
-
-if exist "%VSCodeDir%" (
-    echo [ERROR] The path "%VSCodeDir%" already exists.
-    echo [ERROR] Please remove it or choose a different location.
-    exit /b 1
-)
 
 REM Create VSCode directory structure first
 mkdir "%VSCodeDir%" >nul 2>nul
@@ -326,7 +322,7 @@ set "SettingsDir=%VSCodeDir%\data\user-data\User"
 set "SettingsJson=%SettingsDir%\settings.json"
 
 echo [INFO] Fetching latest VSCode version...
-for /f "usebackq tokens=*" %%A in (`"%POWERSHELL%" -NoProfile -Command "$r = [System.Net.HttpWebRequest]::Create('https://update.code.visualstudio.com/latest/win32-x64-archive/stable'); $r.Method = 'HEAD'; $r.AllowAutoRedirect = $false; $res = $r.GetResponse(); $loc = $res.Headers['Location']; $res.Close(); if ($loc -match 'VSCode-win32-x64-([\d\.]+)\.zip') { $matches[1] }"`) do (
+for /f "usebackq tokens=*" %%A in (`%POWERSHELL% -NoProfile -Command "$r = [System.Net.HttpWebRequest]::Create('https://update.code.visualstudio.com/latest/win32-x64-archive/stable'); $r.Method = 'HEAD'; $r.AllowAutoRedirect = $false; $res = $r.GetResponse(); $loc = $res.Headers['Location']; $res.Close(); if ($loc -match 'VSCode-win32-x64-([\d\.]+)\.zip') { $matches[1] }"`) do (
     set "WebVersion=%%A"
 )
 
@@ -354,15 +350,27 @@ echo [INFO] Extracting VSCode...
 taskkill /f /im code-tunnel.exe >nul 2>nul
 if not exist "%VSCodeDir%" mkdir "%VSCodeDir%"
 
-if exist "%SystemRoot%\System32\tar.exe" (
-    "%SystemRoot%\System32\tar.exe" -xf "%ZipPath%" -C "%VSCodeDir%" || (
-        echo [ERROR] Failed to extract VSCode with tar.exe.
+if exist "%PWSH_EXE%" (
+    "%PWSH_EXE%" -NoProfile -Command "Expand-Archive -LiteralPath '%ZipPath%' -DestinationPath '%VSCodeDir%' -Force" || (
+        echo [ERROR] Failed to extract VSCode with PowerShell 7.
         exit /b 1
     )
 ) else (
-    "%POWERSHELL%" -NoProfile -Command "Expand-Archive -Path '%ZipPath%' -DestinationPath '%VSCodeDir%'" || (
-        echo [ERROR] Failed to extract VSCode.
-        exit /b 1
+    if exist "%POWERSHELL%" (
+        "%POWERSHELL%" -NoProfile -Command "Expand-Archive -LiteralPath '%ZipPath%' -DestinationPath '%VSCodeDir%' -Force" || (
+            echo [ERROR] Failed to extract VSCode with PowerShell.
+            exit /b 1
+        )
+    ) else (
+        if exist "%SystemRoot%\System32\tar.exe" (
+            "%SystemRoot%\System32\tar.exe" -xf "%ZipPath%" -C "%VSCodeDir%" || (
+                echo [ERROR] Failed to extract VSCode with tar.exe.
+                exit /b 1
+            )
+        ) else (
+            echo [ERROR] No extraction tool available ^(PowerShell or tar required^).
+            exit /b 1
+        )
     )
 )
 del /f /q "%ZipPath%"
@@ -403,43 +411,29 @@ echo STEP 9: Installing VSCode Extensions
 echo ================================================
 echo.
 
-set "INSTALL_SCRIPT=%TempDir%\install-extensions.ps1"
-
-> "%INSTALL_SCRIPT%" (
-    echo $ErrorActionPreference = 'Continue'
-    echo $codeExe = '%VSCodeDir%\bin\code.cmd'
-    echo $extensionsDir = '%VSCodeDir%\data\extensions'
-    echo(
-    echo $extensions = @^(
-    echo     'ms-vscode-remote.remote-ssh',
-    echo     'ms-python.python',
-    echo     'ms-toolsai.jupyter',
-    echo     'KevinRose.vsc-python-indent',
-    echo     'GitHub.copilot',
-    echo     'usernamehw.errorlens',
-    echo     'Gerrnperl.outline-map',
-    echo     'zhuangtongfa.material-theme',
-    echo     'teabyii.ayu'
-    echo ^)
-    echo(
-    echo foreach ^($ext in $extensions^) {
-    echo     Write-Host "[INFO] Installing extension: $ext"
-    echo     ^& $codeExe --install-extension $ext --force --extensions-dir $extensionsDir
-    echo     if ^($LASTEXITCODE -ne 0^) {
-    echo         Write-Warning "[WARN] Failed to install extension: $ext"
-    echo     }
-    echo }
-)
-
-if exist "%PWSH_EXE%" (
-    echo [INFO] Using PowerShell 7 for extension installation...
-    "%PWSH_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%INSTALL_SCRIPT%"
-) else (
-    echo [WARN] PowerShell 7 not found. Using PowerShell 5.x...
-    "%POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%INSTALL_SCRIPT%"
-)
-
-del "%INSTALL_SCRIPT%" >nul 2>nul
+echo [INFO] Using PowerShell 7 for extension installation...
+"%PWSH_EXE%" -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$ErrorActionPreference = 'Continue';" ^
+    "$codeExe = '%VSCodeDir%\bin\code.cmd';" ^
+    "$extensionsDir = '%VSCodeDir%\data\extensions';" ^
+    "$extensions = @(" ^
+    "    'ms-vscode-remote.remote-ssh'," ^
+    "    'ms-python.python'," ^
+    "    'ms-toolsai.jupyter'," ^
+    "    'KevinRose.vsc-python-indent'," ^
+    "    'GitHub.copilot'," ^
+    "    'usernamehw.errorlens'," ^
+    "    'Gerrnperl.outline-map'," ^
+    "    'zhuangtongfa.material-theme'," ^
+    "    'teabyii.ayu'" ^
+    ");" ^
+    "foreach ($ext in $extensions) {" ^
+    "    Write-Host \"[INFO] Installing extension: $ext\";" ^
+    "    & $codeExe --install-extension $ext --force --extensions-dir $extensionsDir;" ^
+    "    if ($LASTEXITCODE -ne 0) {" ^
+    "        Write-Warning \"[WARN] Failed to install extension: $ext\"" ^
+    "    }" ^
+    "}"
 
 REM ================================================
 REM STEP 10: Create VSCode Settings
@@ -505,75 +499,43 @@ echo STEP 11: Installing Python Portable
 echo ================================================
 echo.
 
-pushd "%TempDir%"
 set "PyDir=%VSCodeDir%\data\lib\python"
+set "StagingPython=%VSCodeDir%\data\.staging\python"
+mkdir "%StagingPython%" >nul 2>nul
 
-echo [INFO] Fetching latest Python 3 version...
-"%CURL%" -s --compressed https://www.python.org/downloads/windows/ > latest.html || (
-    echo [ERROR] Failed to download Python versions page.
-    popd
+echo [INFO] Fetching latest Python 3 version and downloading to staging...
+"%PWSH_EXE%" -NoProfile -Command ^
+    "$ErrorActionPreference = 'Stop';" ^
+    "try {" ^
+    "    $html = (Invoke-WebRequest -Uri 'https://www.python.org/downloads/windows/' -UseBasicParsing).Content;" ^
+    "    if ($html -match 'Latest Python 3 Release - Python\s+(\d+\.\d+\.\d+)') {" ^
+    "        $pyVer = $matches[1];" ^
+    "        Write-Host \"[INFO] Latest Python version is: $pyVer\";" ^
+    "        $downloadURL = \"https://www.python.org/ftp/python/$pyVer/python-$pyVer-embed-amd64.zip\";" ^
+    "        Write-Host \"[INFO] Downloading Python from: $downloadURL\";" ^
+    "        Invoke-WebRequest -Uri $downloadURL -OutFile '%StagingPython%\python.zip' -UseBasicParsing;" ^
+    "        Write-Host \"[INFO] Downloading get-pip.py...\";" ^
+    "        Invoke-WebRequest -Uri 'https://bootstrap.pypa.io/get-pip.py' -OutFile '%StagingPython%\get-pip.py' -UseBasicParsing;" ^
+    "        Write-Output $pyVer | Out-File -FilePath '%StagingPython%\version.txt' -Encoding ascii -NoNewline;" ^
+    "        Write-Host \"[INFO] Python $pyVer downloaded to staging.\"" ^
+    "    } else {" ^
+    "        Write-Error 'Failed to extract Python version from webpage.';" ^
+    "        exit 1" ^
+    "    }" ^
+    "} catch {" ^
+    "    Write-Error \"Python download failed: $_\";" ^
+    "    exit 1" ^
+    "}" || (
+    echo [ERROR] Failed to download Python.
     exit /b 1
 )
 
-if exist "%PWSH_EXE%" (
-    "%PWSH_EXE%" -NoProfile -Command ^
-        "$html=Get-Content -Raw 'latest.html'; ^
-         $pat='Latest Python 3 Release - Python\s+(\d+\.\d+\.\d+)'; ^
-         if ($html -match $pat) {Write-Output $matches[1]} else {exit 1}" > tempver.txt || (
-        echo [ERROR] Failed to extract Python version.
-        del latest.html >nul 2>nul
-        popd
-        exit /b 1
-    )
-) else (
-    "%POWERSHELL%" -NoProfile -Command ^
-        "$html=Get-Content -Raw 'latest.html'; ^
-         $pat='Latest Python 3 Release - Python\s+(\d+\.\d+\.\d+)'; ^
-         if ($html -match $pat) {Write-Output $matches[1]} else {exit 1}" > tempver.txt || (
-        echo [ERROR] Failed to extract Python version.
-        del latest.html >nul 2>nul
-        popd
-        exit /b 1
-    )
-)
-
-set /p PyVer=<tempver.txt
-del latest.html
-del tempver.txt
-
-if "!PyVer!"=="" (
-    echo [ERROR] Python version not detected.
-    popd
-    exit /b 1
-)
-
-echo [INFO] Latest Python version is: !PyVer!
-
-set "DownloadURL=https://www.python.org/ftp/python/!PyVer!/python-!PyVer!-embed-amd64.zip"
-echo [INFO] Downloading Python from: !DownloadURL!
-"%CURL%" -L "!DownloadURL!" -o python.zip || (
-    echo [ERROR] Failed to download Python embed package.
-    popd
-    exit /b 1
-)
-
-echo [INFO] Extracting Python to: %PyDir%
+echo [INFO] Extracting Python from staging to: %PyDir%
 mkdir "%PyDir%" >nul 2>nul
-
-if exist "%PWSH_EXE%" (
-    "%PWSH_EXE%" -NoProfile -Command "Expand-Archive -Path 'python.zip' -DestinationPath '%PyDir%' -Force" || (
-        echo [ERROR] Failed to extract Python.
-        popd
-        exit /b 1
-    )
-) else (
-    "%POWERSHELL%" -NoProfile -Command "Expand-Archive -Path 'python.zip' -DestinationPath '%PyDir%' -Force" || (
-        echo [ERROR] Failed to extract Python.
-        popd
-        exit /b 1
-    )
+"%PWSH_EXE%" -NoProfile -Command "Expand-Archive -LiteralPath '%StagingPython%\python.zip' -DestinationPath '%PyDir%' -Force" || (
+    echo [ERROR] Failed to extract Python.
+    exit /b 1
 )
-del python.zip
 
 REM Adjust Python _pth file if needed
 for %%F in ("%PyDir%\python*.?_pth") do (
@@ -582,20 +544,11 @@ for %%F in ("%PyDir%\python*.?_pth") do (
 )
 
 REM Install pip
-echo [INFO] Installing pip...
-"%CURL%" -L -o get-pip.py https://bootstrap.pypa.io/get-pip.py || (
-    echo [ERROR] Failed to download get-pip.py
-    popd
-    exit /b 1
-)
-
-"%PyDir%\python.exe" get-pip.py --no-warn-script-location || (
+echo [INFO] Installing pip from staging...
+"%PyDir%\python.exe" "%StagingPython%\get-pip.py" --no-warn-script-location || (
     echo [ERROR] Failed to install pip.
-    del get-pip.py
-    popd
     exit /b 1
 )
-del get-pip.py
 
 REM Create pip.cmd with relative path support
 echo [INFO] Creating pip.cmd wrapper...
@@ -623,9 +576,9 @@ echo [INFO] Creating python.cmd wrapper for convenience...
 REM Clean up pip executables in Scripts folder
 del /f /q "%PyDir%\Scripts\pip*.exe" >nul 2>nul
 
-popd
-
-echo [INFO] Python portable installation complete.
+REM Read Python version from staging
+set /p PyVer=<"%StagingPython%\version.txt"
+echo [INFO] Python %PyVer% portable installation complete.
 
 REM ================================================
 REM Save Installation Marker
@@ -648,8 +601,9 @@ echo.
 echo [SUCCESS] VSCode Portable Environment is ready!
 echo.
 echo [INFO] VSCode Version: !WebVersion!
-echo [INFO] Python Version: !PyVer!
+echo [INFO] Python Version: %PyVer%
 echo [INFO] Installation Directory: %VSCodeDir%
+echo [INFO] Staging Directory: %VSCodeDir%\data\.staging
 echo [INFO] Computer Name: %COMPUTERNAME%
 echo.
 echo [INFO] You can now:
@@ -657,13 +611,10 @@ echo   - Use desktop or start menu shortcut to launch VSCode
 echo   - Move the entire VSCode folder to another location/drive
 echo   - The launcher will auto-configure on first run from new location
 echo   - Python and pip are accessible via relative paths in VSCode
-echo   - Offline installation supported via .staging folder
+echo   - All downloads saved to .staging folder for offline installation
 echo.
 echo [INFO] To start VSCode, run: %VSCodeDir%\launcher.cmd
 echo.
-
-REM Clean up temp directory
-rmdir /s /q "%TempDir%" >nul 2>nul
 
 exit /b 0
 
@@ -956,38 +907,20 @@ if not exist "%USERPROFILE%\Desktop" mkdir "%USERPROFILE%\Desktop"
 if not exist "%APPDATA%\Microsoft\Windows\Start Menu\Programs" mkdir "%APPDATA%\Microsoft\Windows\Start Menu\Programs"
 
 echo [INFO] Creating desktop shortcut...
-if exist "%PWSH_EXE%" (
-    "%PWSH_EXE%" -NoProfile -Command ^
-     "$s=(New-Object -COM WScript.Shell).CreateShortcut('%USERPROFILE%\Desktop\Code.lnk');" ^
-     "$s.TargetPath='%VSCODE_PATH%\launcher.cmd';" ^
-     "$s.IconLocation='%VSCODE_PATH%\Code.exe,0';" ^
-     "$s.WorkingDirectory='%VSCODE_PATH%';" ^
-     "$s.Save()"
-) else (
-    "%POWERSHELL%" -NoProfile -Command ^
-     "$s=(New-Object -COM WScript.Shell).CreateShortcut('%USERPROFILE%\Desktop\Code.lnk');" ^
-     "$s.TargetPath='%VSCODE_PATH%\launcher.cmd';" ^
-     "$s.IconLocation='%VSCODE_PATH%\Code.exe,0';" ^
-     "$s.WorkingDirectory='%VSCODE_PATH%';" ^
-     "$s.Save()"
-)
+"%PWSH_EXE%" -NoProfile -Command ^
+ "$s=(New-Object -COM WScript.Shell).CreateShortcut('%USERPROFILE%\Desktop\Code.lnk');" ^
+ "$s.TargetPath='%VSCODE_PATH%\launcher.cmd';" ^
+ "$s.IconLocation='%VSCODE_PATH%\Code.exe,0';" ^
+ "$s.WorkingDirectory='%VSCODE_PATH%';" ^
+ "$s.Save()"
 
 echo [INFO] Creating start menu shortcut...
-if exist "%PWSH_EXE%" (
-    "%PWSH_EXE%" -NoProfile -Command ^
-     "$s=(New-Object -COM WScript.Shell).CreateShortcut('%APPDATA%\Microsoft\Windows\Start Menu\Programs\Code.lnk');" ^
-     "$s.TargetPath='%VSCODE_PATH%\launcher.cmd';" ^
-     "$s.IconLocation='%VSCODE_PATH%\Code.exe,0';" ^
-     "$s.WorkingDirectory='%VSCODE_PATH%';" ^
-     "$s.Save()"
-) else (
-    "%POWERSHELL%" -NoProfile -Command ^
-     "$s=(New-Object -COM WScript.Shell).CreateShortcut('%APPDATA%\Microsoft\Windows\Start Menu\Programs\Code.lnk');" ^
-     "$s.TargetPath='%VSCODE_PATH%\launcher.cmd';" ^
-     "$s.IconLocation='%VSCODE_PATH%\Code.exe,0';" ^
-     "$s.WorkingDirectory='%VSCODE_PATH%';" ^
-     "$s.Save()"
-)
+"%PWSH_EXE%" -NoProfile -Command ^
+ "$s=(New-Object -COM WScript.Shell).CreateShortcut('%APPDATA%\Microsoft\Windows\Start Menu\Programs\Code.lnk');" ^
+ "$s.TargetPath='%VSCODE_PATH%\launcher.cmd';" ^
+ "$s.IconLocation='%VSCODE_PATH%\Code.exe,0';" ^
+ "$s.WorkingDirectory='%VSCODE_PATH%';" ^
+ "$s.Save()"
 
 echo [INFO] Shortcuts created successfully.
 goto :EOF
